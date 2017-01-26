@@ -3,20 +3,21 @@ const mysql = require('mysql');
 const bingKey = process.env.BING_KEY;
 
 const pool = mysql.createPool({
-    host: process.env.HOST,
+    host: process.env.MYSQL_HOST,
     port: process.env.PORT,
     user: process.env.USER,
     password: process.env.PASSWORD,
     database: process.env.DATABASE
 });
+
 let done = false;
 let conn_count = 1;
-let enque_count = 0;
-let connection_count = 0;
 
-let reduce_count = function(num){
-    console.log('release: ', conn_count);
-    conn_count -= num;
+let reduce_count = function(index, stop){
+    if(index === stop){
+        done = true;
+    }
+    conn_count -= 1;
     if(conn_count === 0 && done){
         console.log('fired');
         pool.end();
@@ -24,6 +25,9 @@ let reduce_count = function(num){
 };
 
 pool.getConnection(function(err, connection){
+    if(err){
+        console.log(err);
+    }
     let query = "SELECT users.zip, users.city, users.address1, users.id, users.type FROM users WHERE users.zip IS NOT NULL AND users.address1 IS NOT NULL AND users.city IS NOT NULL AND users.lng IS NULL;";
     connection.query(query, function(error, results, fields){
         if(error) throw error;
@@ -34,6 +38,7 @@ pool.getConnection(function(err, connection){
         }
         else{
             results.forEach(function(user, index){
+                conn_count++;
                 request.get({
                         url: 'http://dev.virtualearth.net/REST/v1/Locations',
                         qs: {
@@ -46,45 +51,30 @@ pool.getConnection(function(err, connection){
                         }
                     },
                     function(err, res, body){
-                        console.log(body);
                         if(err){
-                            console.log(err);
+                            reduce_count(index, stop);
                         }
                         else{
                             body = JSON.parse(body);
                             let resourceSets = body['resourceSets'];
                             if(resourceSets && resourceSets[0] && resourceSets[0].resources && resourceSets[0].resources[0] && resourceSets[0].resources[0].point && resourceSets[0].resources[0].point['coordinates']){
-                                console.log('passed check');
                                 let coordinates = resourceSets[0].resources[0].point['coordinates'];
-                                conn_count++;
-                                console.log(coordinates);
-                                console.log(user);
                                 pool.getConnection(function(connection_err, conn){
                                     conn.query('UPDATE users SET lat = ?, lng = ? WHERE id = ?', [coordinates[0], coordinates[1], user.id], function(error, results, fields){
                                         if(error) throw error;
                                         conn.release();
-                                        reduce_count(1);
-                                        console.log(results);
+                                        reduce_count(index, stop);
                                     });
                                 })
                             }
+                            else{
+                                reduce_count(index, stop);
+                            }
                         }
-                        if(index === stop){
-                            done = true;
-                        }
-                        reduce_count(0);
                     }
                 );
             });
         }
-        reduce_count(1);
+        reduce_count(0, 1);
     });
-});
-
-pool.on('enqueue', function(){
-    console.log('enque: ', ++enque_count);
-});
-
-pool.on('connection', function(){
-    console.log('connect: ', ++connection_count);
 });
