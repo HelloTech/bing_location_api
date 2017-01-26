@@ -3,7 +3,8 @@ const mysql = require('mysql');
 const bingKey = process.env.BING_KEY;
 
 const pool = mysql.createPool({
-    host: process.env.POOL,
+    host: process.env.HOST,
+    port: process.env.PORT,
     user: process.env.USER,
     password: process.env.PASSWORD,
     database: process.env.DATABASE
@@ -14,8 +15,6 @@ let enque_count = 0;
 let connection_count = 0;
 
 let reduce_count = function(num){
-    enque_count--;
-    connection_count--;
     console.log('release: ', conn_count);
     conn_count -= num;
     if(conn_count === 0 && done){
@@ -47,15 +46,19 @@ pool.getConnection(function(err, connection){
                         }
                     },
                     function(err, res, body){
+                        console.log(body);
                         if(err){
                             console.log(err);
                         }
                         else{
                             body = JSON.parse(body);
-                            let recourceSets = body['resourceSets'];
-                            if(recourceSets && recourceSets[0] && recourceSets[0].resources && recourceSets[0].resources[0] && recourceSets[0].resources[0].point && recourceSets[0].resources[0].point['ccordinates']){
-                                let coordinates = recourceSets[0].resources[0].point['ccordinates'];
+                            let resourceSets = body['resourceSets'];
+                            if(resourceSets && resourceSets[0] && resourceSets[0].resources && resourceSets[0].resources[0] && resourceSets[0].resources[0].point && resourceSets[0].resources[0].point['coordinates']){
+                                console.log('passed check');
+                                let coordinates = resourceSets[0].resources[0].point['coordinates'];
                                 conn_count++;
+                                console.log(coordinates);
+                                console.log(user);
                                 pool.getConnection(function(connection_err, conn){
                                     conn.query('UPDATE users SET lat = ?, lng = ? WHERE id = ?', [coordinates[0], coordinates[1], user.id], function(error, results, fields){
                                         if(error) throw error;
@@ -65,14 +68,11 @@ pool.getConnection(function(err, connection){
                                     });
                                 })
                             }
-                            else{
-                                reduce_count(0);
-                            }
                         }
-                        console.log('fired after query');
                         if(index === stop){
                             done = true;
                         }
+                        reduce_count(0);
                     }
                 );
             });
