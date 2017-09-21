@@ -39,13 +39,17 @@ pool.getConnection(function(err, connection){
         else{
             results.forEach(function(user, index){
                 conn_count++;
+                if(!user.zip || !user.address1){
+                    reduce_count(index, stop);
+                    return;
+                }
                 request.get({
                         url: 'http://dev.virtualearth.net/REST/v1/Locations',
                         qs: {
-                            postalCode: user.zip,
-                            addressLine: user.address1,
+                            postalCode: user.zip === '<unknown>' ? '' : user.zip,
+                            addressLine: user.address1 === '<unknown>' ? '' : user.address1,
                             include: 'queryParse',
-                            locality: user.city,
+                            locality: user.city === '<unknown>' ? '' : user.city,
                             maxResults: 1,
                             key: bingKey
                         }
